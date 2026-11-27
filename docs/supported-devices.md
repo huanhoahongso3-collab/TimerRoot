@@ -256,6 +256,8 @@ workspace, so they could not be booted in QEMU; see the notes.
 
 | Device | Model | Android build ID | Security patch | Kernel | Profile | Status |
 |---|---|---|---|---|---|---|
+| OPPO Reno 16F (VN) | CPH2859 | EX01C20P01 | — | `6.1.157-android14-11-o-g480d2ac7ac4f` | `conf/6.1.157-android14-11-o-g480d2ac7ac4f-4k.conf` | untested |
+| OPPO Reno 16F | CPH2859 | — | — | `6.1.157-android14-11-o-gb95c4abd149a` | `conf/6.1.157-android14-11-o-gb95c4abd149a-4k.conf` | untested |
 | OPPO Pad mini | OPD2515 | — | — | `6.12.58-android16-6-g7704a1ae279b-ab15213644-4k` | `conf/6.12.58-android16-6-g7704a1ae279b-ab15213644-4k.conf` | untested |
 | OPPO Pad mini | OPD2515 | — | — | `6.12.69-android16-6-g242e1a07f878-ab15865446-4k` | `conf/6.12.69-android16-6-g242e1a07f878-ab15865446-4k.conf` | untested |
 | OPPO Find X8s | PKT110 | — | — | `6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k` | `conf/6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k.conf` | untested |
