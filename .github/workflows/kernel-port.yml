@@ -50,8 +50,10 @@ jobs:
           KERN=$(uname -r)
           sudo apt-get install -y --no-install-recommends "linux-tools-${KERN}" || true
           which bpftool || sudo apt-get install -y bpftool || true
-          pip3 install -q mkbootimg vmlinux-to-elf
-          which unpack_bootimg
+          pip3 install -q vmlinux-to-elf
+          sudo apt-get install -y --no-install-recommends mkbootimg || true
+          which unpack_bootimg || pip3 install -q mkbootimg 2>/dev/null || true
+          unpack_bootimg --version 2>/dev/null || true
 
       - name: Install payload-dumper-go
         run: |
