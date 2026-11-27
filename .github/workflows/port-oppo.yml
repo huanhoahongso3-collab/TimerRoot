@@ -259,10 +259,10 @@ jobs:
           echo "[*] Running selfcheck on $CONF_FILE..."
           chmod +x "$TIMER_PATH"
           "$TIMER_PATH" --conf "$CONF_FILE" selfcheck && \
-            echo "::notice::selfcheck passed ✓" || \
-            echo "::warning::selfcheck failed — manual review required"
+            echo "::notice::selfcheck passed OK" || \
+            echo "::warning::selfcheck failed -- manual review required"
           "$TIMER_PATH" --conf "$CONF_FILE" target && \
-            echo "::notice::target mode passed ✓" || true
+            echo "::notice::target mode passed OK" || true
 
       # -------------------------------------------------------------------
       # Upload conf as artifact
@@ -313,10 +313,10 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 ### Status
 - [x] Conf file derived (F3-F5)
-- [ ] F1: vulnerability check (begin_new_exec order) — **manual**
-- [ ] F6: \`validate_conf.py\` cross-check — **manual**
-- [ ] F7-F11: QEMU boot gates — **manual**
-- [ ] F12-F13: on-device test — **manual**
+- [ ] F1: vulnerability check (begin_new_exec order) -- **manual**
+- [ ] F6: \`validate_conf.py\` cross-check -- **manual**
+- [ ] F7-F11: QEMU boot gates -- **manual**
+- [ ] F12-F13: on-device test -- **manual**
 
 ### How to verify
 \`\`\`bash
@@ -325,6 +325,6 @@ timer --conf $CONF_FILE selfcheck
 timer --conf $CONF_FILE target
 \`\`\`
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)" \
+ Generated with [Claude Code](https://claude.com/claude-code)" \
             --base main \
             --head "$BRANCH"
