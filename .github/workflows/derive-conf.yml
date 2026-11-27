@@ -1,21 +1,18 @@
-name: Port device - derive conf from payload.bin
+name: Derive conf for OPPO device
 
-# Triggered manually with a URL to either:
-#   - A full payload.bin OTA  (payload-dumper-go extracts boot + vendor_boot)
-#   - A pre-extracted boot.img (skip payload step)
 on:
   workflow_dispatch:
     inputs:
       payload_url:
-        description: "Direct URL to payload.bin (OTA). Leave blank if providing boot_url."
+        description: "Direct URL to payload.bin OTA. Leave blank if providing boot_url."
         required: false
         default: ""
       boot_url:
-        description: "Direct URL to already-extracted boot.img. Used when payload_url is blank."
+        description: "Direct URL to already-extracted boot.img."
         required: false
         default: ""
       vendor_boot_url:
-        description: "Direct URL to vendor_boot.img (optional but needed for task_alloc_bytes)."
+        description: "Direct URL to vendor_boot.img."
         required: false
         default: ""
       device_name:
@@ -36,7 +33,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: port-device-${{ github.ref }}
+  group: derive-conf-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -49,9 +46,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # -------------------------------------------------------------------
-      # Tool installation
-      # -------------------------------------------------------------------
       - name: Install system tools
         run: |
           set -euo pipefail
@@ -60,19 +54,15 @@ jobs:
             python3 python3-pip \
             llvm \
             linux-tools-generic || true
-          # bpftool may need a versioned package
           KERN=$(uname -r)
           sudo apt-get install -y --no-install-recommends \
             "linux-tools-${KERN}" || true
           which bpftool || sudo apt-get install -y bpftool || true
-          # Android image tools
           pip3 install -q mkbootimg
           which unpack_bootimg
 
       - name: Install vmlinux-to-elf
-        run: |
-          set -euo pipefail
-          pip3 install -q vmlinux-to-elf
+        run: pip3 install -q vmlinux-to-elf
 
       - name: Install payload-dumper-go
         run: |
@@ -84,22 +74,17 @@ jobs:
           chmod +x payload-dumper-go
           ./payload-dumper-go --version || true
 
-      # -------------------------------------------------------------------
-      # Acquire images
-      # -------------------------------------------------------------------
       - name: Download and extract from payload.bin
         if: inputs.payload_url != ''
         run: |
           set -euo pipefail
-          echo "[*] Downloading payload.bin..."
+          echo "Downloading payload.bin..."
           curl -fL "${{ inputs.payload_url }}" -o payload.bin
           ls -lh payload.bin
-
-          echo "[*] Extracting boot + vendor_boot partitions..."
+          echo "Extracting boot + vendor_boot partitions..."
           mkdir -p extracted
           ./payload-dumper-go -partitions boot,vendor_boot -output extracted payload.bin || \
           ./payload-dumper-go -partitions boot           -output extracted payload.bin
-
           ls -lh extracted/
 
       - name: Download pre-extracted boot.img
@@ -107,16 +92,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p extracted
-          echo "[*] Downloading boot.img..."
+          echo "Downloading boot.img..."
           curl -fL "${{ inputs.boot_url }}" -o extracted/boot.img
           ls -lh extracted/
 
-      - name: Download vendor_boot.img (optional)
+      - name: Download vendor_boot.img
         if: inputs.vendor_boot_url != ''
         run: |
           set -euo pipefail
           mkdir -p extracted
-          echo "[*] Downloading vendor_boot.img..."
+          echo "Downloading vendor_boot.img..."
           curl -fL "${{ inputs.vendor_boot_url }}" -o extracted/vendor_boot.img
           ls -lh extracted/vendor_boot.img
 
@@ -128,9 +113,6 @@ jobs:
           fi
           file extracted/boot.img
 
-      # -------------------------------------------------------------------
-      # Unpack boot.img and extract kernel release string
-      # -------------------------------------------------------------------
       - name: Unpack boot.img
         id: unpack
         run: |
@@ -138,7 +120,6 @@ jobs:
           mkdir -p boot_out
           unpack_bootimg --boot_img extracted/boot.img --out boot_out
 
-          # Get kernel release string
           KERNEL_IMAGE=""
           for f in boot_out/kernel boot_out/Image boot_out/zImage; do
             [ -f "$f" ] && KERNEL_IMAGE="$f" && break
@@ -164,26 +145,19 @@ jobs:
           echo "PAGE_SIZE=$PAGE_SIZE" >> "$GITHUB_ENV"
           echo "page_size=$PAGE_SIZE" >> "$GITHUB_OUTPUT"
 
-      # -------------------------------------------------------------------
-      # Convert kernel Image to ELF with kallsyms + BTF
-      # -------------------------------------------------------------------
       - name: Convert kernel Image to ELF (vmlinux-to-elf)
         run: |
           set -euo pipefail
-          echo "[*] Running vmlinux-to-elf on $KERNEL_IMAGE..."
+          echo "Running vmlinux-to-elf on $KERNEL_IMAGE..."
           vmlinux-to-elf "$KERNEL_IMAGE" vmlinux.elf
           ls -lh vmlinux.elf
           nm vmlinux.elf | wc -l
 
-      # -------------------------------------------------------------------
-      # Derive conf
-      # -------------------------------------------------------------------
       - name: Derive conf constants
         id: derive
         run: |
           set -euo pipefail
 
-          # Sanitize release string for filename
           CONF_NAME=$(echo "$RELEASE" | tr '/' '-' | tr ' ' '-')
           if [ "$PAGE_SIZE" = "4096" ]; then
             CONF_FILE="conf/${CONF_NAME}-4k.conf"
@@ -209,16 +183,13 @@ jobs:
           echo "--- Derived conf ---"
           cat "$CONF_FILE"
 
-      # -------------------------------------------------------------------
-      # Build timer exploit for selfcheck
-      # -------------------------------------------------------------------
-      - name: Set up JDK (for SDK tools)
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Install NDK and build timer (for selfcheck)
+      - name: Install NDK and build timer
         env:
           NDK_VERSION: "29.0.14206865"
           TARGET: "aarch64-linux-android21"
@@ -256,27 +227,21 @@ jobs:
         if: env.TIMER_BUILT == 'true'
         run: |
           set -euo pipefail
-          echo "[*] Running selfcheck on $CONF_FILE..."
+          echo "Running selfcheck on $CONF_FILE..."
           chmod +x "$TIMER_PATH"
           "$TIMER_PATH" --conf "$CONF_FILE" selfcheck && \
-            echo "::notice::selfcheck passed OK" || \
-            echo "::warning::selfcheck failed -- manual review required"
+            echo "::notice::selfcheck passed" || \
+            echo "::warning::selfcheck failed - manual review required"
           "$TIMER_PATH" --conf "$CONF_FILE" target && \
-            echo "::notice::target mode passed OK" || true
+            echo "::notice::target mode passed" || true
 
-      # -------------------------------------------------------------------
-      # Upload conf as artifact
-      # -------------------------------------------------------------------
       - name: Upload conf as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "conf-${{ steps.derive.outputs.conf_file }}"
+          name: "derived-conf"
           path: ${{ env.CONF_FILE }}
           retention-days: 30
 
-      # -------------------------------------------------------------------
-      # Commit and open PR
-      # -------------------------------------------------------------------
       - name: Commit conf and open PR
         if: inputs.open_pr == 'true'
         env:
@@ -313,10 +278,10 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 ### Status
 - [x] Conf file derived (F3-F5)
-- [ ] F1: vulnerability check (begin_new_exec order) -- **manual**
-- [ ] F6: \`validate_conf.py\` cross-check -- **manual**
-- [ ] F7-F11: QEMU boot gates -- **manual**
-- [ ] F12-F13: on-device test -- **manual**
+- [ ] F1: vulnerability check (begin_new_exec order) -- manual
+- [ ] F6: validate_conf.py cross-check -- manual
+- [ ] F7-F11: QEMU boot gates -- manual
+- [ ] F12-F13: on-device test -- manual
 
 ### How to verify
 \`\`\`bash
@@ -325,6 +290,6 @@ timer --conf $CONF_FILE selfcheck
 timer --conf $CONF_FILE target
 \`\`\`
 
- Generated with [Claude Code](https://claude.com/claude-code)" \
+Generated with Claude Code" \
             --base main \
             --head "$BRANCH"
