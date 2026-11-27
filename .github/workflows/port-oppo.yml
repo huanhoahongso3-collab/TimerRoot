@@ -27,7 +27,9 @@ on:
         required: false
         default: "true"
         type: choice
-        options: ["true", "false"]
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: write
