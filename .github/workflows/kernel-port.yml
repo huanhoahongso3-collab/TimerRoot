@@ -1,0 +1,23 @@
+name: Kernel port - derive conf
+
+on:
+  workflow_dispatch:
+    inputs:
+      boot_url:
+        description: "URL to boot.img"
+        required: false
+        default: ""
+      vendor_boot_url:
+        description: "URL to vendor_boot.img"
+        required: false
+        default: ""
+      device_name:
+        description: "Device name"
+        required: false
+        default: "Unknown Device"
+
+jobs:
+  derive:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "device=${{ inputs.device_name }}"
