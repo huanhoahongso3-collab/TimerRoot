@@ -71,12 +71,13 @@ class ElfBinary:
         return None
 
     def find_string(self, text):
-        """Find null-terminated string in read-only sections, return list of VAs."""
+        """Find null-terminated string in read-only sections, return list of VAs.
+        Also searches '.kernel' (vmlinux-to-elf single-section reconstruction)."""
         needle = text.encode('ascii') + b'\x00'
         vas = []
         for s in self.sections:
             if not ('rodata' in s.name or 'str' in s.name or s.name in
-                    ('__ksymtab_strings', '.init.rodata', '.text.str')):
+                    ('__ksymtab_strings', '.init.rodata', '.text.str', '.kernel')):
                 continue
             pos = 0
             while True:
@@ -88,9 +89,11 @@ class ElfBinary:
         return vas
 
     def text_insns(self):
-        """Yield (va, insn_u32) for all .text instructions."""
+        """Yield (va, insn_u32) for all .text instructions.
+        Also handles vmlinux-to-elf output which uses a single '.kernel' section."""
         for s in self.sections:
-            if not (s.name.startswith('.text') or s.name == '.init.text'):
+            if not (s.name.startswith('.text') or s.name == '.init.text'
+                    or s.name == '.kernel'):
                 continue
             for i in range(0, s.size - 3, 4):
                 yield (s.vaddr + i, struct.unpack_from('<I', s.data, i)[0])
