@@ -183,9 +183,9 @@ jobs:
       - name: Selfcheck
         if: env.TIMER_BUILT == 'true'
         run: |
-          chmod +x "$TIMER_PATH"
-          "$TIMER_PATH" --conf "$CONF_FILE" selfcheck && echo "selfcheck passed" || echo "::warning::selfcheck failed"
-          "$TIMER_PATH" --conf "$CONF_FILE" target && echo "target passed" || true
+          chmod +x "./$TIMER_PATH"
+          "./$TIMER_PATH" --conf "$CONF_FILE" selfcheck && echo "selfcheck passed" || echo "::warning::selfcheck failed"
+          "./$TIMER_PATH" --conf "$CONF_FILE" target && echo "target passed" || true
 
       - name: Upload conf artifact
         uses: actions/upload-artifact@v4
@@ -194,10 +194,8 @@ jobs:
           path: ${{ env.CONF_FILE }}
           retention-days: 30
 
-      - name: Commit conf and open PR
+      - name: Commit conf and push branch
         if: inputs.open_pr == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           DNAME="${{ inputs.device_name }}"
@@ -210,8 +208,4 @@ jobs:
           git add "$CONF_FILE" scripts/derive_conf.py
           git commit -m "port: add ${{ inputs.device_name }} conf (auto-derived)"
           git push origin "$BRANCH"
-          gh pr create \
-            --title "port: ${{ inputs.device_name }} ($RELEASE)" \
-            --body "Auto-derived conf for ${{ inputs.device_name }} kernel $RELEASE" \
-            --base main \
-            --head "$BRANCH"
+          echo "::notice::Branch pushed: $BRANCH — open a PR manually or enable 'Allow GitHub Actions to create pull requests' in repo settings."
