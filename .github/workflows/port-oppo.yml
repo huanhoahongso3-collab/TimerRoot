@@ -284,7 +284,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          BRANCH="port/${{ inputs.device_name == '' && 'unknown' || inputs.device_name }}-$(date +%Y%m%d)"
+          DNAME="${{ inputs.device_name }}"
+          DNAME="${DNAME:-unknown}"
+          BRANCH="port/${DNAME}-$(date +%Y%m%d)"
           BRANCH=$(echo "$BRANCH" | tr ' /' '-' | tr -dc '[:alnum:]-_')
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
