@@ -25,7 +25,7 @@ import java.net.URL;
  */
 final class UpdateChecker {
 
-    static final String REPO = "MVN123123123123123/TimerRoot";
+    static final String REPO = "huanhoahongso3-collab/TimerRoot";
     static final String RELEASES_PAGE =
             "https://github.com/" + REPO + "/releases/latest";
 

@@ -67,7 +67,7 @@ public class MainActivity extends Activity {
      * call site, cred layout and task offsets are all different.
      */
     private static final String TIMER_URL =
-            "https://github.com/MVN123123123123123/TimerRoot/releases/download/bingchiling/timer";
+            "https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/reno16f-vn/timer";
     private static final String TIMER_TARGET = "target=lynx";
 
     /*

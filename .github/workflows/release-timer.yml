@@ -1,8 +1,8 @@
 name: Update timer release
 
 # Rebuild the exploit and the app, then refresh the assets the app uses:
-#   https://github.com/MVN123123123123123/TimerRoot/releases/download/bingchiling/timer
-#   https://github.com/MVN123123123123123/TimerRoot/releases/download/bingchiling/TimerRoot.apk
+#   https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/bingchiling/timer
+#   https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/bingchiling/TimerRoot.apk
 # The release tag is fixed, so the app URL never changes; only the assets do.
 on:
   push:

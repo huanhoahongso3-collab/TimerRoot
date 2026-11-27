@@ -2,8 +2,8 @@ name: Update beta timer release
 
 # Beta-channel twin of release-timer.yml: rebuild the exploit and the app from
 # the beta-test branch, then refresh the beta assets:
-#   https://github.com/MVN123123123123123/TimerRoot/releases/download/beta/timer
-#   https://github.com/MVN123123123123123/TimerRoot/releases/download/beta/TimerRoot.apk
+#   https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/beta/timer
+#   https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/beta/TimerRoot.apk
 # The tag is fixed, so the app URL never changes; only the assets do. The
 # stable release (tag bingchiling, built from main) is not touched, and this
 # release is marked as a prerelease so "latest release" still resolves to

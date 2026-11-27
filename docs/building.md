@@ -130,7 +130,7 @@ the workflow itself, and on manual dispatch. It:
 
 The tag is fixed so the app's download URL never changes; only the assets are
 replaced. The app fetches
-`https://github.com/MVN123123123123123/TimerRoot/releases/download/bingchiling/timer`.
+`https://github.com/huanhoahongso3-collab/TimerRoot/releases/download/reno16f-vn/timer`.
 
 ## Adding a kernel profile
 

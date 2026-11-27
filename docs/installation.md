@@ -35,7 +35,7 @@ coverage see [Supported devices](supported-devices.md).
 ## 1. Install the app
 
 Install the APK from the
-[releases page](https://github.com/MVN123123123123123/TimerRoot/releases), or
+[releases page](https://github.com/huanhoahongso3-collab/TimerRoot/releases), or
 build it yourself with [Building](building.md). The release tag also carries
 the matching `timer` exploit binary and the app's source snapshot.
 
