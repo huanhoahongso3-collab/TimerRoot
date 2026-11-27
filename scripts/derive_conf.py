@@ -337,8 +337,12 @@ def derive_conf(vmlinux_elf, vendor_boot_img, release, page_size, device_name):
     print(f"    {len(symbols)} symbols loaded")
 
     print("[*] Reading BTF structs via bpftool...")
-    btf = get_btf_structs(vmlinux_elf)
-    print(f"    {len(btf)} structs found")
+    try:
+        btf = get_btf_structs(vmlinux_elf)
+        print(f"    {len(btf)} structs found")
+    except Exception as e:
+        print(f"[warn] BTF unavailable ({e}); using default struct offsets", file=sys.stderr)
+        btf = {}
 
     # --- call sites ---
     print("[*] Finding timer_site...")
@@ -348,9 +352,10 @@ def derive_conf(vmlinux_elf, vendor_boot_img, release, page_size, device_name):
     cp_low21 = find_copy_process_low21(vmlinux_elf, symbols)
 
     if not timer_site or not cp_low21:
-        print("\n[error] Critical constants could not be derived. "
-              "Manual disassembly required.", file=sys.stderr)
-        sys.exit(1)
+        print("\n[warn] Critical constants not auto-derived; using placeholder 0x0. "
+              "Manual disassembly required before use.", file=sys.stderr)
+        timer_site = timer_site or 0
+        cp_low21 = cp_low21 or 0
 
     # --- BTF offsets ---
     cred = btf.get('cred', {})

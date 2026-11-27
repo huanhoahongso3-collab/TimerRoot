@@ -103,18 +103,27 @@ jobs:
             exit 1
           fi
           echo "KERNEL_IMAGE=$KERNEL_IMAGE" >> "$GITHUB_ENV"
+          # Try strings on raw image; if empty, vmlinux-to-elf will extract it later
           RELEASE=$(strings "$KERNEL_IMAGE" | grep -m1 'Linux version' | sed 's/Linux version \([^ ]*\).*/\1/' || true)
           echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
-          echo "::notice::Kernel release: $RELEASE"
+          echo "::notice::Kernel release (pre-decompress): $RELEASE"
           PAGE_SIZE=$(file "$KERNEL_IMAGE" | grep -oP '(?<=page size )\d+' || echo 4096)
           echo "PAGE_SIZE=$PAGE_SIZE" >> "$GITHUB_ENV"
 
       - name: vmlinux-to-elf
         run: |
           set -euo pipefail
-          vmlinux-to-elf "$KERNEL_IMAGE" vmlinux.elf
+          vmlinux-to-elf "$KERNEL_IMAGE" vmlinux.elf 2>&1 | tee /tmp/v2elf.log
           ls -lh vmlinux.elf
+          # Extract release from vmlinux-to-elf output if strings didn't get it
+          if [ -z "$RELEASE" ]; then
+            RELEASE=$(grep -oP 'Linux version \K\S+' /tmp/v2elf.log | head -1 || true)
+            if [ -n "$RELEASE" ]; then
+              echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
+              echo "::notice::Kernel release (from vmlinux-to-elf): $RELEASE"
+            fi
+          fi
 
       - name: Derive conf
         id: derive
