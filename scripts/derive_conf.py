@@ -247,6 +247,22 @@ def _trace_reg(insns, reg, depth=0):
 # ---------------------------------------------------------------------------
 
 def get_symbols(vmlinux_elf):
+    try:
+        from elftools.elf.elffile import ELFFile
+        syms = {}
+        with open(vmlinux_elf, 'rb') as f:
+            elf = ELFFile(f)
+            symtab = elf.get_section_by_name('.symtab')
+            if symtab:
+                for i in range(symtab.num_symbols()):
+                    s = symtab.get_symbol(i)
+                    if s.name and s['st_value']:
+                        syms[s.name] = s['st_value']
+        if syms:
+            return syms
+    except Exception:
+        pass
+
     result = subprocess.run(['nm', '--defined-only', '-n', vmlinux_elf],
                             capture_output=True, text=True)
     syms = {}
