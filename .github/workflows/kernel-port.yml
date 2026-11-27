@@ -1,0 +1,295 @@
+name: Derive conf for OPPO device
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_url:
+        description: "Direct URL to payload.bin OTA. Leave blank if providing boot_url."
+        required: false
+        default: ""
+      boot_url:
+        description: "Direct URL to already-extracted boot.img."
+        required: false
+        default: ""
+      vendor_boot_url:
+        description: "Direct URL to vendor_boot.img."
+        required: false
+        default: ""
+      device_name:
+        description: "Human-readable device name (e.g. OPPO Reno 16F)"
+        required: false
+        default: "Unknown Device"
+      open_pr:
+        description: "Open a pull request with the derived conf?"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: derive-conf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  derive-conf:
+    name: "Derive conf for ${{ inputs.device_name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            python3 python3-pip \
+            llvm \
+            linux-tools-generic || true
+          KERN=$(uname -r)
+          sudo apt-get install -y --no-install-recommends \
+            "linux-tools-${KERN}" || true
+          which bpftool || sudo apt-get install -y bpftool || true
+          pip3 install -q mkbootimg
+          which unpack_bootimg
+
+      - name: Install vmlinux-to-elf
+        run: pip3 install -q vmlinux-to-elf
+
+      - name: Install payload-dumper-go
+        run: |
+          set -euo pipefail
+          PDG_VER="2.1.0"
+          curl -fsSL \
+            "https://github.com/ssut/payload-dumper-go/releases/download/${PDG_VER}/payload-dumper-go_${PDG_VER}_linux_amd64.tar.gz" \
+            | tar xz
+          chmod +x payload-dumper-go
+          ./payload-dumper-go --version || true
+
+      - name: Download and extract from payload.bin
+        if: inputs.payload_url != ''
+        run: |
+          set -euo pipefail
+          echo "Downloading payload.bin..."
+          curl -fL "${{ inputs.payload_url }}" -o payload.bin
+          ls -lh payload.bin
+          echo "Extracting boot + vendor_boot partitions..."
+          mkdir -p extracted
+          ./payload-dumper-go -partitions boot,vendor_boot -output extracted payload.bin || \
+          ./payload-dumper-go -partitions boot           -output extracted payload.bin
+          ls -lh extracted/
+
+      - name: Download pre-extracted boot.img
+        if: inputs.payload_url == '' && inputs.boot_url != ''
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          echo "Downloading boot.img..."
+          curl -fL "${{ inputs.boot_url }}" -o extracted/boot.img
+          ls -lh extracted/
+
+      - name: Download vendor_boot.img
+        if: inputs.vendor_boot_url != ''
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          echo "Downloading vendor_boot.img..."
+          curl -fL "${{ inputs.vendor_boot_url }}" -o extracted/vendor_boot.img
+          ls -lh extracted/vendor_boot.img
+
+      - name: Verify images were acquired
+        run: |
+          if [ ! -f extracted/boot.img ]; then
+            echo "::error::No boot.img found. Provide payload_url or boot_url."
+            exit 1
+          fi
+          file extracted/boot.img
+
+      - name: Unpack boot.img
+        id: unpack
+        run: |
+          set -euo pipefail
+          mkdir -p boot_out
+          unpack_bootimg --boot_img extracted/boot.img --out boot_out
+
+          KERNEL_IMAGE=""
+          for f in boot_out/kernel boot_out/Image boot_out/zImage; do
+            [ -f "$f" ] && KERNEL_IMAGE="$f" && break
+          done
+
+          if [ -z "$KERNEL_IMAGE" ]; then
+            echo "::error::No kernel image found in boot_out/"
+            ls -la boot_out/
+            exit 1
+          fi
+
+          echo "KERNEL_IMAGE=$KERNEL_IMAGE" >> "$GITHUB_ENV"
+          echo "kernel_image=$KERNEL_IMAGE" >> "$GITHUB_OUTPUT"
+
+          RELEASE=$(strings "$KERNEL_IMAGE" | grep -m1 'Linux version' \
+            | sed 's/Linux version \([^ ]*\).*/\1/' || true)
+          echo "RELEASE=$RELEASE"
+          echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Kernel release: $RELEASE"
+
+          PAGE_SIZE=$(file "$KERNEL_IMAGE" | grep -oP '(?<=page size )\d+' || echo 4096)
+          echo "PAGE_SIZE=$PAGE_SIZE" >> "$GITHUB_ENV"
+          echo "page_size=$PAGE_SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Convert kernel Image to ELF (vmlinux-to-elf)
+        run: |
+          set -euo pipefail
+          echo "Running vmlinux-to-elf on $KERNEL_IMAGE..."
+          vmlinux-to-elf "$KERNEL_IMAGE" vmlinux.elf
+          ls -lh vmlinux.elf
+          nm vmlinux.elf | wc -l
+
+      - name: Derive conf constants
+        id: derive
+        run: |
+          set -euo pipefail
+
+          CONF_NAME=$(echo "$RELEASE" | tr '/' '-' | tr ' ' '-')
+          if [ "$PAGE_SIZE" = "4096" ]; then
+            CONF_FILE="conf/${CONF_NAME}-4k.conf"
+          else
+            KP=$((PAGE_SIZE / 1024))
+            CONF_FILE="conf/${CONF_NAME}-${KP}k.conf"
+          fi
+
+          echo "CONF_FILE=$CONF_FILE" >> "$GITHUB_ENV"
+          echo "conf_file=$CONF_FILE" >> "$GITHUB_OUTPUT"
+
+          VBOOT=""
+          [ -f "extracted/vendor_boot.img" ] && VBOOT="--vendor-boot extracted/vendor_boot.img"
+
+          python3 scripts/derive_conf.py \
+            --vmlinux vmlinux.elf \
+            $VBOOT \
+            --release "$RELEASE" \
+            --page-size "$PAGE_SIZE" \
+            --device "${{ inputs.device_name }}" \
+            --output "$CONF_FILE"
+
+          echo "--- Derived conf ---"
+          cat "$CONF_FILE"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install NDK and build timer
+        env:
+          NDK_VERSION: "29.0.14206865"
+          TARGET: "aarch64-linux-android21"
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+
+          find_sdkmanager() {
+            for c in "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+                     "$SDK_ROOT"/cmdline-tools/*/bin/sdkmanager; do
+              [ -x "$c" ] && echo "$c" && return
+            done
+            command -v sdkmanager
+          }
+          SM="$(find_sdkmanager || true)"
+          if [ -n "$SM" ]; then
+            yes | "$SM" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+            [ -d "$SDK_ROOT/ndk/$NDK_VERSION" ] || \
+              "$SM" --sdk_root="$SDK_ROOT" --install "ndk;$NDK_VERSION"
+          fi
+
+          CC=$(find "$SDK_ROOT/ndk" -path "*/bin/${TARGET}-clang" 2>/dev/null | head -1)
+          if [ -z "$CC" ]; then
+            echo "::warning::NDK clang not found; skipping selfcheck build"
+            echo "TIMER_BUILT=false" >> "$GITHUB_ENV"
+          else
+            "$CC" -O2 -ffunction-sections -fdata-sections \
+              -Wl,--gc-sections -g -static -pthread \
+              -o timer_bin p7a/timer_p7a.c
+            echo "TIMER_BUILT=true" >> "$GITHUB_ENV"
+            echo "TIMER_PATH=timer_bin" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run selfcheck
+        if: env.TIMER_BUILT == 'true'
+        run: |
+          set -euo pipefail
+          echo "Running selfcheck on $CONF_FILE..."
+          chmod +x "$TIMER_PATH"
+          "$TIMER_PATH" --conf "$CONF_FILE" selfcheck && \
+            echo "::notice::selfcheck passed" || \
+            echo "::warning::selfcheck failed - manual review required"
+          "$TIMER_PATH" --conf "$CONF_FILE" target && \
+            echo "::notice::target mode passed" || true
+
+      - name: Upload conf as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "derived-conf"
+          path: ${{ env.CONF_FILE }}
+          retention-days: 30
+
+      - name: Commit conf and open PR
+        if: inputs.open_pr == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          DNAME="${{ inputs.device_name }}"
+          DNAME="${DNAME:-unknown}"
+          BRANCH="port/${DNAME}-$(date +%Y%m%d)"
+          BRANCH=$(echo "$BRANCH" | tr ' /' '-' | tr -dc '[:alnum:]-_')
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "$CONF_FILE" scripts/derive_conf.py
+          git commit -m "port: add ${{ inputs.device_name }} conf (auto-derived)
+
+Kernel: $RELEASE  page_size: $PAGE_SIZE
+Device: ${{ inputs.device_name }}
+
+Auto-derived via scripts/derive_conf.py from factory boot.img.
+F1 (vulnerability check) and F6 (validate_conf.py) must be
+verified before this profile is considered ready.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "port: ${{ inputs.device_name }} ($RELEASE)" \
+            --body "## Auto-derived conf for ${{ inputs.device_name }}
+
+**Kernel:** \`$RELEASE\`
+**Page size:** $PAGE_SIZE
+**Conf file:** \`$CONF_FILE\`
+
+### Status
+- [x] Conf file derived (F3-F5)
+- [ ] F1: vulnerability check (begin_new_exec order) -- manual
+- [ ] F6: validate_conf.py cross-check -- manual
+- [ ] F7-F11: QEMU boot gates -- manual
+- [ ] F12-F13: on-device test -- manual
+
+### How to verify
+\`\`\`bash
+# F6 selfcheck
+timer --conf $CONF_FILE selfcheck
+timer --conf $CONF_FILE target
+\`\`\`
+
+Generated with Claude Code" \
+            --base main \
+            --head "$BRANCH"
